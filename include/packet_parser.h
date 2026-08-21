@@ -4,8 +4,14 @@
 #include <cstdio>
 #include <cstdint>
 #include <iostream>
+#include "dpi.h"
 
 namespace pktparse {
+
+inline dpi::PortScanDetector& scan_detector() {
+    static dpi::PortScanDetector detector;
+    return detector;
+}
 
 inline uint16_t read_be16(const uint8_t* p) {
     return (static_cast<uint16_t>(p[0]) << 8) | p[1];
@@ -70,6 +76,12 @@ inline void handle_packet(const struct pcap_pkthdr* header, const u_char* packet
               << "  (header=" << ip_header_len << "B, ttl=" << (int)ttl
               << ", proto=" << (int)protocol << ")\n";
 
+    std::string malformed_reason = dpi::check_malformed_ip(ip_header_len, header->caplen, ETHERNET_HEADER_LEN);
+    if (!malformed_reason.empty()) {
+        dpi::print_alert("Malformed IP header from " + std::string(src_ip) + ": " + malformed_reason);
+        return;
+    }
+
     const uint8_t* transport_start = ip_start + ip_header_len;
     size_t bytes_so_far = ETHERNET_HEADER_LEN + ip_header_len;
 
@@ -89,6 +101,20 @@ inline void handle_packet(const struct pcap_pkthdr* header, const u_char* packet
         if (flags & 0x04) std::cout << "RST ";
         if (flags & 0x08) std::cout << "PSH ";
         std::cout << "]\n";
+
+        if (dpi::is_known_bad_port(dst_port)) {
+            dpi::print_alert("Connection to known-bad port " + std::to_string(dst_port) +
+                              " (" + std::string(src_ip) + " -> " + std::string(dst_ip) + ")");
+        }
+
+        bool is_syn_only = (flags & 0x02) && !(flags & 0x10);
+        if (is_syn_only) {
+            bool scan_detected = scan_detector().record_syn(std::string(src_ip), dst_port);
+            if (scan_detected) {
+                dpi::print_alert("Possible port scan from " + std::string(src_ip) +
+                                  " - many distinct ports contacted in a short window");
+            }
+        }
     } else if (protocol == IP_PROTO_UDP) {
         if (header->caplen < bytes_so_far + 8) {
             std::cout << "  [truncated before UDP header]\n";
