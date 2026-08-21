@@ -11,10 +11,18 @@ if(WIN32)
 
     add_executable(pcap_reader src/pcap_reader.cpp)
     target_link_libraries(pcap_reader wpcap Packet ws2_32)
+
+    add_executable(live_capture src/live_capture.cpp)
+    target_link_libraries(live_capture wpcap Packet ws2_32)
 else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(PCAP REQUIRED libpcap)
+
     add_executable(pcap_reader src/pcap_reader.cpp)
     target_include_directories(pcap_reader PRIVATE ${PCAP_INCLUDE_DIRS})
     target_link_libraries(pcap_reader PRIVATE ${PCAP_LIBRARIES})
+
+    add_executable(live_capture src/live_capture.cpp)
+    target_include_directories(live_capture PRIVATE ${PCAP_INCLUDE_DIRS})
+    target_link_libraries(live_capture PRIVATE ${PCAP_LIBRARIES})
 endif()
