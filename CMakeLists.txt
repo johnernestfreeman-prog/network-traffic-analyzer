@@ -1,0 +1,20 @@
+cmake_minimum_required(VERSION 3.16)
+project(NetworkTrafficAnalyzer CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(WIN32)
+    set(NPCAP_SDK "C:/npcap-sdk")
+    include_directories(${NPCAP_SDK}/Include)
+    link_directories(${NPCAP_SDK}/Lib/x64)
+
+    add_executable(pcap_reader src/pcap_reader.cpp)
+    target_link_libraries(pcap_reader wpcap Packet ws2_32)
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(PCAP REQUIRED libpcap)
+    add_executable(pcap_reader src/pcap_reader.cpp)
+    target_include_directories(pcap_reader PRIVATE ${PCAP_INCLUDE_DIRS})
+    target_link_libraries(pcap_reader PRIVATE ${PCAP_LIBRARIES})
+endif()
