@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstdint>
 #include <iostream>
+#include <functional>
+#include <vector>
 #include "dpi.h"
 
 namespace pktparse {
@@ -12,6 +14,19 @@ inline dpi::PortScanDetector& scan_detector() {
     static dpi::PortScanDetector detector;
     return detector;
 }
+
+struct PacketFields {
+    std::string src_ip;
+    std::string dst_ip;
+    uint16_t src_port;
+    uint16_t dst_port;
+    std::string protocol;
+    uint32_t length_bytes;
+    std::string tcp_flags;
+    std::vector<std::string> alerts;
+};
+
+using PacketCallback = std::function<void(const PacketFields&)>;
 
 inline uint16_t read_be16(const uint8_t* p) {
     return (static_cast<uint16_t>(p[0]) << 8) | p[1];
@@ -26,7 +41,8 @@ inline void print_mac(const uint8_t* mac) {
     printf("%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-inline void handle_packet(const struct pcap_pkthdr* header, const u_char* packet) {
+inline void handle_packet(const struct pcap_pkthdr* header, const u_char* packet,
+                           const PacketCallback& on_packet = nullptr) {
     static int packet_count = 0;
     packet_count++;
 
@@ -94,26 +110,38 @@ inline void handle_packet(const struct pcap_pkthdr* header, const u_char* packet
         uint16_t dst_port = read_be16(transport_start + 2);
         uint8_t flags = transport_start[13];
 
+        std::string flags_str;
         std::cout << "  TCP: srcport=" << src_port << " -> dstport=" << dst_port << "  flags=[";
-        if (flags & 0x02) std::cout << "SYN ";
-        if (flags & 0x10) std::cout << "ACK ";
-        if (flags & 0x01) std::cout << "FIN ";
-        if (flags & 0x04) std::cout << "RST ";
-        if (flags & 0x08) std::cout << "PSH ";
+        if (flags & 0x02) { std::cout << "SYN "; flags_str += "SYN "; }
+        if (flags & 0x10) { std::cout << "ACK "; flags_str += "ACK "; }
+        if (flags & 0x01) { std::cout << "FIN "; flags_str += "FIN "; }
+        if (flags & 0x04) { std::cout << "RST "; flags_str += "RST "; }
+        if (flags & 0x08) { std::cout << "PSH "; flags_str += "PSH "; }
         std::cout << "]\n";
 
+        std::vector<std::string> alerts;
         if (dpi::is_known_bad_port(dst_port)) {
-            dpi::print_alert("Connection to known-bad port " + std::to_string(dst_port) +
-                              " (" + std::string(src_ip) + " -> " + std::string(dst_ip) + ")");
+            std::string a = "Connection to known-bad port " + std::to_string(dst_port) +
+                             " (" + std::string(src_ip) + " -> " + std::string(dst_ip) + ")";
+            dpi::print_alert(a);
+            alerts.push_back(a);
         }
 
         bool is_syn_only = (flags & 0x02) && !(flags & 0x10);
         if (is_syn_only) {
             bool scan_detected = scan_detector().record_syn(std::string(src_ip), dst_port);
             if (scan_detected) {
-                dpi::print_alert("Possible port scan from " + std::string(src_ip) +
-                                  " - many distinct ports contacted in a short window");
+                std::string a = "Possible port scan from " + std::string(src_ip) +
+                                 " - many distinct ports contacted in a short window";
+                dpi::print_alert(a);
+                alerts.push_back(a);
             }
+        }
+
+        if (on_packet) {
+            PacketFields fields{src_ip, dst_ip, src_port, dst_port, "TCP",
+                                 static_cast<uint32_t>(header->len), flags_str, alerts};
+            on_packet(fields);
         }
     } else if (protocol == IP_PROTO_UDP) {
         if (header->caplen < bytes_so_far + 8) {
@@ -126,6 +154,12 @@ inline void handle_packet(const struct pcap_pkthdr* header, const u_char* packet
 
         std::cout << "  UDP: srcport=" << src_port << " -> dstport=" << dst_port
                   << "  length=" << length << "\n";
+
+        if (on_packet) {
+            PacketFields fields{src_ip, dst_ip, src_port, dst_port, "UDP",
+                                 static_cast<uint32_t>(header->len), "", {}};
+            on_packet(fields);
+        }
     } else {
         std::cout << "  [transport protocol " << (int)protocol << " not decoded yet]\n";
     }

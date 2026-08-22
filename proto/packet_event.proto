@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package traffic;
+
+option java_multiple_files = true;
+option java_package = "com.johnfreeman.trafficanalyzer.grpc";
+option java_outer_classname = "PacketEventProto";
+
+message PacketEvent {
+  string source_ip = 1;
+  string dest_ip = 2;
+  uint32 source_port = 3;
+  uint32 dest_port = 4;
+  string protocol = 5;
+  uint32 length_bytes = 6;
+  string tcp_flags = 7;
+  int64 timestamp_unix_ms = 8;
+  repeated string alerts = 9;
+}
+
+message SessionInfo {
+  string session_id = 1;
+  string interface_name = 2;
+  int64 started_unix_ms = 3;
+}
+
+message IngestSummary {
+  int64 packets_received = 1;
+  int64 alerts_received = 2;
+}
+
+service PacketIngest {
+  rpc StreamPackets(stream IngestMessage) returns (IngestSummary);
+}
+
+message IngestMessage {
+  oneof payload {
+    SessionInfo session_info = 1;
+    PacketEvent packet_event = 2;
+  }
+}

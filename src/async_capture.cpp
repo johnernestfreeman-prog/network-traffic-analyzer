@@ -1,15 +1,17 @@
 #include "../include/packet_parser.h"
+#include "../include/grpc_client.h"
 #include <boost/asio.hpp>
 #include <iostream>
 #include <vector>
 #include <chrono>
+#include <cstring>
 
 using boost::asio::steady_timer;
 
 class AsyncCapture {
 public:
-    AsyncCapture(boost::asio::io_context& io_context, pcap_t* handle)
-        : io_context_(io_context), handle_(handle), timer_(io_context) {
+    AsyncCapture(boost::asio::io_context& io_context, pcap_t* handle, TrafficGrpcClient* grpc_client)
+        : io_context_(io_context), handle_(handle), timer_(io_context), grpc_client_(grpc_client) {
         char errbuf[PCAP_ERRBUF_SIZE];
         if (pcap_setnonblock(handle_, 1, errbuf) == -1) {
             std::cerr << "Failed to set non-blocking mode: " << errbuf << "\n";
@@ -33,8 +35,17 @@ private:
         int result = pcap_dispatch(handle_, 50,
             [](u_char* user, const struct pcap_pkthdr* header, const u_char* packet) {
                 auto* self = reinterpret_cast<AsyncCapture*>(user);
-                pktparse::handle_packet(header, packet);
                 self->total_packets_++;
+
+                pktparse::PacketCallback callback = nullptr;
+                if (self->grpc_client_) {
+                    callback = [self](const pktparse::PacketFields& fields) {
+                        self->grpc_client_->send_packet(
+                            fields.src_ip, fields.dst_ip, fields.src_port, fields.dst_port,
+                            fields.protocol, fields.length_bytes, fields.tcp_flags, fields.alerts);
+                    };
+                }
+                pktparse::handle_packet(header, packet, callback);
             },
             reinterpret_cast<u_char*>(this));
 
@@ -46,10 +57,16 @@ private:
     boost::asio::io_context& io_context_;
     pcap_t* handle_;
     steady_timer timer_;
+    TrafficGrpcClient* grpc_client_;
     int total_packets_ = 0;
 };
 
 int main(int argc, char* argv[]) {
+    bool use_grpc = false;
+    for (int a = 1; a < argc; a++) {
+        if (std::strcmp(argv[a], "--grpc") == 0) use_grpc = true;
+    }
+
     char errbuf[PCAP_ERRBUF_SIZE];
 
     pcap_if_t* all_devices;
@@ -83,6 +100,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     pcap_if_t* selected = device_list[choice];
+    std::string interface_name = selected->name;
 
     pcap_t* handle = pcap_open_live(selected->name, 65536, 0, 1000, errbuf);
     if (handle == nullptr) {
@@ -92,11 +110,25 @@ int main(int argc, char* argv[]) {
     }
     pcap_freealldevs(all_devices);
 
-    std::cout << "\nCapturing (async, via Boost Asio) on: " << selected->name
+    std::unique_ptr<TrafficGrpcClient> grpc_client;
+    if (use_grpc) {
+        std::cout << "\n[grpc] Connecting to localhost:50051...\n";
+        grpc_client = std::make_unique<TrafficGrpcClient>("localhost:50051");
+        if (!grpc_client->start_session("capture-session-1", interface_name)) {
+            std::cerr << "[grpc] Could not start session. Is test_server.exe running?\n";
+            return 1;
+        }
+        std::cout << "[grpc] Session started, streaming packets...\n";
+    }
+
+    std::cout << "\nCapturing (async, via Boost Asio) on: " << interface_name
               << "\nThis will run for 30 seconds, then stop automatically.\n";
+    if (use_grpc) {
+        std::cout << "Streaming to gRPC server at localhost:50051\n";
+    }
 
     boost::asio::io_context io_context;
-    AsyncCapture capture(io_context, handle);
+    AsyncCapture capture(io_context, handle, grpc_client.get());
 
     steady_timer heartbeat(io_context);
     int seconds_elapsed = 0;
@@ -121,5 +153,10 @@ int main(int argc, char* argv[]) {
 
     pcap_close(handle);
     std::cout << "\nCapture stopped. Total packets: " << capture.packets_processed() << "\n";
+
+    if (use_grpc && grpc_client) {
+        grpc_client->finish_session();
+    }
+
     return 0;
 }
