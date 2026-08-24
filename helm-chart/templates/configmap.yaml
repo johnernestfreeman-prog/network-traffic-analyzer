@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traffic-analyzer-config
+data:
+  DB_URL: "jdbc:postgresql://postgres:{{ .Values.postgres.port }}/{{ .Values.db.name }}"
+  DB_USER: "{{ .Values.db.user }}"

@@ -1,0 +1,24 @@
+server:
+  image:
+    repository: traffic-analyzer-server
+    tag: latest
+    pullPolicy: IfNotPresent
+  ports:
+    grpc: 50051
+    http: 8080
+asyncCapture:
+  image:
+    repository: async-capture
+    tag: latest
+    pullPolicy: IfNotPresent
+postgres:
+  image:
+    repository: postgres
+    tag: "16"
+    pullPolicy: IfNotPresent
+  port: 5432
+  storage: 1Gi
+db:
+  name: traffic_analyzer
+  user: traffic_app
+  password: Spar34App

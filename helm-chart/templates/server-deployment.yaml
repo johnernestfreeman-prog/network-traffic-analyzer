@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-analyzer-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic-analyzer-server
+  template:
+    metadata:
+      labels:
+        app: traffic-analyzer-server
+    spec:
+      containers:
+        - name: traffic-analyzer-server
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.server.ports.grpc }}
+            - containerPort: {{ .Values.server.ports.http }}
+          env:
+            - name: DB_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: traffic-analyzer-config
+                  key: DB_URL
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: traffic-analyzer-config
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: traffic-analyzer-secret
+                  key: DB_PASSWORD
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              value: "update"

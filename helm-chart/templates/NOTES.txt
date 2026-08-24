@@ -1,0 +1,10 @@
+Traffic Analyzer chart deployed.
+
+Check pod status:
+  kubectl get pods
+
+Check the async-capture Job logs:
+  kubectl logs job/async-capture
+
+Check the server logs:
+  kubectl logs deployment/traffic-analyzer-server

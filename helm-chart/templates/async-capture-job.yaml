@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: async-capture
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: async-capture
+          image: "{{ .Values.asyncCapture.image.repository }}:{{ .Values.asyncCapture.image.tag }}"
+          imagePullPolicy: {{ .Values.asyncCapture.image.pullPolicy }}
+          args:
+            - "--file"
+            - "data/sample.pcap"
+            - "--grpc"
+          env:
+            - name: GRPC_SERVER_ADDR
+              value: "traffic-analyzer-server:{{ .Values.server.ports.grpc }}"
