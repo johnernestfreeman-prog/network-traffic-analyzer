@@ -1,103 +1,100 @@
 # Network Traffic Analyzer
 
-A packet-capture and inspection tool built in C++, structured as the foundation
-for a microservices-based traffic analysis pipeline (C++ capture/DPI service →
-gRPC → Java/Spring Boot storage & query service, containerized with Docker,
-deployed via Kubernetes/Helm).
+A packet capture and inspection pipeline built in C++ and Java, streaming parsed traffic events from raw NIC capture through gRPC into a persisted, queryable REST API — containerized with Docker and orchestrated with Kubernetes/Helm.
 
-Built to close specific skill gaps for Cyber Software Engineer roles: low-level
-networking, C++, async I/O, deep packet inspection, service-to-service
-communication, and container orchestration.
+**Live showcase:** https://johnernestfreeman-prog.github.io/network-traffic-analyzer/
+**Companion server repo:** https://github.com/johnernestfreeman-prog/traffic-analyzer-server
 
-## Status: Phase 1 complete
+Built to close specific skill gaps for Cyber Software Engineer roles: low-level networking, C++, async I/O, deep packet inspection, service-to-service communication via gRPC, and container orchestration.
 
-- [x] **Phase 1** — Read a `.pcap` file, manually parse Ethernet / IPv4 / TCP / UDP headers
-- [ ] Phase 2 — Live capture off a real interface (pcap++)
-- [ ] Phase 3 — Async capture pipeline (Boost Asio)
-- [ ] Phase 4 — Basic DPI: flag suspicious patterns
-- [ ] Phase 5 — gRPC service contract, stream parsed data to a stub server
-- [ ] Phase 6 — Java/Spring Boot gRPC server, persists to PostgreSQL
-- [ ] Phase 7 — REST query API on the Java service
-- [ ] Phase 8 — Dockerize both services
-- [ ] Phase 9 — Helm chart, deploy to local Kubernetes cluster
+## Status: all 9 phases complete
 
-## Why hand-parse headers instead of using a high-level library from day one?
+- [x] Phase 1 — Parse a `.pcap` file, manually decode Ethernet / IPv4 / TCP / UDP headers
+- [x] Phase 2 — Live capture off a real interface (Npcap)
+- [x] Phase 3 — Async capture pipeline (Boost.Asio)
+- [x] Phase 4 — Deep packet inspection: flag suspicious patterns
+- [x] Phase 5 — gRPC client, stream parsed events to the server
+- [x] Phase 6 — Java/Spring Boot gRPC server, persists to PostgreSQL
+- [x] Phase 7 — REST query API on the Java service
+- [x] Phase 8 — Dockerize both services
+- [x] Phase 9 — Helm chart, deploy the full pipeline to Kubernetes
 
-Phase 1 deliberately parses Ethernet/IP/TCP/UDP headers by hand using raw
-`libpcap`, rather than reaching for pcap++'s convenience layer immediately.
-This is the part of a technical interview where "explain how a TCP header is
-laid out on the wire" becomes something you can actually answer, because
-you've done it byte-by-byte. Phase 2 introduces pcap++ for live-capture
-ergonomics, but the header-parsing understanding carries forward.
-
-## Building
-
-Requires `cmake`, a C++17 compiler, and `libpcap-dev`.
-
-```bash
-# Debian/Ubuntu
-sudo apt-get install cmake build-essential libpcap-dev
-
-# macOS
-brew install cmake libpcap
-```
-
-```bash
-mkdir build && cd build
-cmake ..
-make
-```
-
-## Running
-
-```bash
-./build/pcap_reader data/sample.pcap
-```
-
-A sample `.pcap` file is included at `data/sample.pcap` — it contains a TCP
-handshake (SYN/SYN-ACK/ACK) to port 443, a UDP/DNS-style packet, and one
-packet to an unusual high port (31337) that Phase 4's DPI logic will later
-flag as suspicious.
-
-### Generating your own test pcap
-
-If you have Python + scapy installed:
-
-```python
-from scapy.all import *
-pkt = Ether()/IP(dst="8.8.8.8")/TCP(dport=443, flags="S")
-wrpcap("data/custom.pcap", [pkt])
-```
-
-Or capture real traffic with `tcpdump` (requires root):
-
-```bash
-sudo tcpdump -i eth0 -w data/live_capture.pcap -c 50
-```
-
-## Project structure
+## Architecture
 
 ```
-network-traffic-analyzer/
-├── CMakeLists.txt
-├── src/
-│   └── pcap_reader.cpp    # Phase 1: offline pcap file parser
-├── data/
-│   └── sample.pcap        # test fixture
-├── include/                # (future: shared headers as project grows)
-└── build/                  # cmake build output (gitignored)
+ .pcap / live NIC
+        |
+        v
+  [ Capture ]  libpcap / Npcap, hand-parsed headers
+        |
+        v
+  [ Inspect ]  DPI - rule-based alerting (e.g. known-bad ports)
+        |
+        v
+  [ Stream  ]  gRPC client, async via Boost.Asio  ---->  gRPC server (Java/Spring Boot)
+                                                                |
+                                                                v
+                                                        [ Persist ]  PostgreSQL via Spring Data JPA
+                                                                |
+                                                                v
+                                                        [ REST API ]  query stored packet events
 ```
 
-## Roadmap detail
+Both services run identically across three environments — native, Docker (`--network host`), and Kubernetes (via Service DNS) — controlled by a `GRPC_SERVER_ADDR` environment variable that defaults to `localhost:50051` when unset.
 
-**Phase 2 (next):** swap `pcap_open_offline` for `pcap_open_live` (or migrate
-to pcap++'s `PcapLiveDevice` for a cleaner live-capture API) to sniff a real
-interface instead of reading a static file.
+## Tech stack
 
-**Phase 4 (DPI):** flag patterns like unusual destination ports, malformed
-header lengths, and high-frequency connection attempts from a single source
-IP within a time window — the beginning of anomaly detection.
+| Layer | Tools |
+|---|---|
+| Capture & networking | C++17, Boost.Asio, libpcap, Npcap, CMake |
+| Transport | gRPC, Protocol Buffers |
+| Server & persistence | Java 21, Spring Boot 4, Hibernate/JPA, PostgreSQL, Maven |
+| Containers | Docker, multi-stage builds, Debian bookworm-slim |
+| Orchestration | Kubernetes, Helm (Deployments, Services, Jobs, ConfigMaps, Secrets, PVCs) |
 
-**Phase 5–6 (microservices split):** the C++ side becomes the capture/DPI
-service; a Java/Spring Boot service receives parsed+flagged records over gRPC
-and persists them to PostgreSQL, exposing a REST query API on top.
+## Building and running
+
+### Native (Windows, MinGW)
+
+Requires `cmake`, a C++17 compiler, and `libpcap-dev` (or the Npcap SDK on Windows).
+
+```
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+mingw32-make.exe -C build async_capture
+./build/async_capture.exe --file data/sample.pcap --grpc
+```
+
+### Docker
+
+```
+docker build -f Dockerfile.async_capture -t async-capture .
+docker run --rm --network host async-capture
+```
+
+The image regenerates its protobuf/gRPC C++ bindings inside the container at build time, using the container's own `protoc`/`grpc_cpp_plugin`, rather than shipping pre-generated bindings, to avoid protobuf version drift between host and container.
+
+### Kubernetes (Helm)
+
+```
+cd helm-chart
+helm install traffic-analyzer .
+kubectl get pods
+kubectl logs job/async-capture
+```
+
+The chart deploys PostgreSQL, the Java gRPC server, and the C++ capture client (as a one-shot Kubernetes Job) together, with the client reaching the server via its Kubernetes Service DNS name rather than localhost.
+
+## Repo structure
+
+```
+src/                  C++ capture client, DPI engine, gRPC client
+proto/                packet_event.proto - shared gRPC contract
+data/                 sample.pcap for replay/testing
+Dockerfile.async_capture
+helm-chart/           Helm chart: postgres, server, async-capture Job
+index.html            GitHub Pages showcase site
+```
+
+## Author
+
+John Freeman — [GitHub](https://github.com/johnernestfreeman-prog) · [LinkedIn](https://linkedin.com/in/john-ernest-freeman-jr)
