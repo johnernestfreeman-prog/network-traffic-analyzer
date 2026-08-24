@@ -1,0 +1,44 @@
+# ---- Build stage ----
+FROM debian:bookworm-slim AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    pkg-config \
+    libboost-system-dev \
+    libgrpc++-dev \
+    protobuf-compiler-grpc \
+    protobuf-compiler \
+    libprotobuf-dev \
+    libpcap-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY . .
+
+RUN protoc -I proto \
+    --cpp_out=include \
+    --grpc_out=include \
+    --plugin=protoc-gen-grpc=$(which grpc_cpp_plugin) \
+    proto/packet_event.proto
+
+RUN cmake -B build -S . -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build --target async_capture -j"$(nproc)"
+
+# ---- Runtime stage ----
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libboost-system1.74.0 \
+    libgrpc++1.51 \
+    libprotobuf32 \
+    libpcap0.8 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=build /src/build/async_capture .
+COPY --from=build /src/data/sample.pcap ./data/sample.pcap
+
+ENTRYPOINT ["./async_capture"]
+CMD ["--file", "data/sample.pcap", "--grpc"]
