@@ -127,8 +127,10 @@ int main(int argc, char* argv[]) {
 
     std::unique_ptr<TrafficGrpcClient> grpc_client;
     if (use_grpc) {
-        std::cout << "\n[grpc] Connecting to localhost:50051...\n";
-        grpc_client = std::make_unique<TrafficGrpcClient>("localhost:50051");
+        const char* grpc_addr_env = std::getenv("GRPC_SERVER_ADDR");
+        std::string grpc_addr = grpc_addr_env ? grpc_addr_env : "localhost:50051";
+        std::cout << "[grpc] Connecting to " << grpc_addr << "...\n";
+        grpc_client = std::make_unique<TrafficGrpcClient>(grpc_addr);
         if (!grpc_client->start_session("capture-session-1", interface_name)) {
             std::cerr << "[grpc] Could not start session. Is test_server.exe running?\n";
             return 1;
