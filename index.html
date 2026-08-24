@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Network Traffic Analyzer — John Freeman</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-void: #0a0e1a;
+    --bg-panel: #111826;
+    --bg-panel-raised: #161f33;
+    --line: #232e47;
+    --cyan: #4fd1c5;
+    --cyan-dim: #2a5a56;
+    --amber: #f5a623;
+    --amber-dim: #5c3f14;
+    --text-hi: #e8ecf4;
+    --text-lo: #7c8aa8;
+    --text-faint: #4a566e;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg-void);
+    background-image:
+      radial-gradient(ellipse 800px 400px at 20% -10%, rgba(79, 209, 197, 0.06), transparent),
+      radial-gradient(ellipse 600px 300px at 90% 10%, rgba(245, 166, 35, 0.04), transparent);
+    color: var(--text-hi);
+    font-family: 'Inter', sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+  }
+
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  a { color: inherit; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 32px;
+  }
+
+  /* ---------- HEADER ---------- */
+  header {
+    border-bottom: 1px solid var(--line);
+    padding: 22px 0;
+  }
+  header .wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 10px var(--cyan);
+    animation: blink 2.2s ease-in-out infinite;
+  }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .brand span {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-hi);
+  }
+  nav {
+    display: flex;
+    gap: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+  nav a {
+    text-decoration: none;
+    color: var(--text-lo);
+    transition: color 0.15s ease;
+    border-bottom: 1px solid transparent;
+    padding-bottom: 2px;
+  }
+  nav a:hover { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+  /* ---------- HERO ---------- */
+  .hero {
+    padding: 72px 0 24px;
+  }
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .eyebrow::before {
+    content: '';
+    width: 24px; height: 1px;
+    background: var(--cyan);
+  }
+  h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 800;
+    font-size: clamp(30px, 4.4vw, 46px);
+    line-height: 1.14;
+    letter-spacing: -0.01em;
+    max-width: 780px;
+    color: var(--text-hi);
+  }
+  h1 em {
+    font-style: normal;
+    color: var(--cyan);
+  }
+  .lede {
+    margin-top: 20px;
+    max-width: 600px;
+    font-size: 16.5px;
+    color: var(--text-lo);
+  }
+  .lede strong { color: var(--text-hi); font-weight: 500; }
+
+  .hero-links {
+    margin-top: 30px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    padding: 11px 18px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.15s ease;
+    border: 1px solid var(--line);
+  }
+  .btn-primary {
+    background: var(--cyan);
+    color: #06201d;
+    border-color: var(--cyan);
+  }
+  .btn-primary:hover { background: #6ee0d5; }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-hi);
+  }
+  .btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+
+  /* ---------- PIPELINE DIAGRAM ---------- */
+  .pipeline-section { padding: 56px 0 20px; }
+  .pipeline-frame {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 8px 8px 0;
+    overflow: hidden;
+  }
+  .pipeline-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+  }
+  .pipeline-topbar .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    letter-spacing: 0.06em;
+  }
+  .pipeline-topbar .dots { display: flex; gap: 6px; }
+  .pipeline-topbar .dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+
+  svg.pipeline { width: 100%; height: auto; display: block; }
+
+  .node-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    fill: var(--text-hi);
+  }
+  .node-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    fill: var(--text-lo);
+  }
+  .node-index {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    fill: var(--text-faint);
+  }
+
+  .flow-path { fill: none; stroke: var(--line); stroke-width: 1.5; }
+  .flow-dot { fill: var(--cyan); filter: drop-shadow(0 0 4px var(--cyan)); }
+  .alert-ring {
+    fill: none;
+    stroke: var(--amber);
+    stroke-width: 1.5;
+    opacity: 0;
+    animation: alertpulse 4.5s ease-in-out infinite;
+  }
+  @keyframes alertpulse {
+    0%, 60% { opacity: 0; r: 20; }
+    68% { opacity: 0.9; r: 20; }
+    88% { opacity: 0; r: 34; }
+    100% { opacity: 0; r: 20; }
+  }
+  .node-box {
+    fill: var(--bg-panel-raised);
+    stroke: var(--line);
+    stroke-width: 1.2;
+    transition: stroke 0.2s ease;
+  }
+  .node-group:hover .node-box { stroke: var(--cyan); }
+
+  /* ---------- STATS ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 22px;
+  }
+  .stat {
+    background: var(--bg-panel);
+    padding: 20px 18px;
+  }
+  .stat .n {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 24px;
+    color: var(--cyan);
+  }
+  .stat .l {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-lo);
+    margin-top: 4px;
+    letter-spacing: 0.02em;
+  }
+
+  /* ---------- STACK ---------- */
+  .stack-section { padding: 68px 0; }
+  .section-head { margin-bottom: 30px; }
+  .section-head .eyebrow { margin-bottom: 10px; }
+  .section-head h2 {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 22px;
+    color: var(--text-hi);
+  }
+
+  .stack-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .stack-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .stack-card h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--amber);
+    margin-bottom: 12px;
+  }
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--text-hi);
+    background: var(--bg-panel-raised);
+    border: 1px solid var(--line);
+    padding: 5px 9px;
+    border-radius: 5px;
+  }
+
+  /* ---------- REPOS ---------- */
+  .repo-section { padding-bottom: 76px; }
+  .repo-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .repo-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 22px;
+    text-decoration: none;
+    display: block;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .repo-card:hover { border-color: var(--cyan); transform: translateY(-2px); }
+  .repo-card .rname {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-hi);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .repo-card .rname .arrow { color: var(--cyan); }
+  .repo-card .rdesc {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-lo);
+    line-height: 1.55;
+  }
+  .repo-card .rmeta {
+    margin-top: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  /* ---------- FOOTER ---------- */
+  footer {
+    border-top: 1px solid var(--line);
+    padding: 26px 0 40px;
+  }
+  footer .wrap {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  footer p {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+  footer .flinks {
+    display: flex;
+    gap: 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  footer .flinks a { color: var(--text-lo); text-decoration: none; }
+  footer .flinks a:hover { color: var(--cyan); }
+
+  @media (max-width: 720px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stack-grid { grid-template-columns: 1fr; }
+    .repo-grid { grid-template-columns: 1fr; }
+    nav { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="brand">
+      <span class="dot"></span>
+      <span>traffic-analyzer</span>
+    </div>
+    <nav>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#stack">Stack</a>
+      <a href="#repos">Repos</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <div class="eyebrow">9 / 9 phases verified end-to-end</div>
+      <h1>A packet capture pipeline that goes<br><em>from a raw NIC to a Kubernetes cluster.</em></h1>
+      <p class="lede">
+        Built to close a real gap: hands-on systems programming in <strong>C++</strong> and
+        <strong>Java</strong> across the layers a defense-contracting backend role actually touches —
+        raw packet capture, async networking, deep packet inspection, gRPC, and container orchestration.
+      </p>
+      <div class="hero-links">
+        <a class="btn btn-primary" href="https://github.com/johnernestfreeman-prog/network-traffic-analyzer" target="_blank" rel="noopener">View capture client →</a>
+        <a class="btn btn-ghost" href="https://github.com/johnernestfreeman-prog/traffic-analyzer-server" target="_blank" rel="noopener">View gRPC server →</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="pipeline-section" id="pipeline">
+    <div class="wrap">
+      <div class="pipeline-frame">
+        <div class="pipeline-topbar">
+          <span class="tag">// live packet flow, capture → cluster</span>
+          <div class="dots"><span></span><span></span><span></span></div>
+        </div>
+
+        <svg class="pipeline" viewBox="0 0 1040 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram of the six pipeline stages: capture, inspect, stream, persist, containerize, orchestrate">
+          <!-- connecting path -->
+          <path class="flow-path" d="M 90 150 L 950 150" />
+
+          <!-- moving packets along the path -->
+          <circle class="flow-dot" r="4">
+            <animateMotion dur="4s" repeatCount="indefinite" path="M 90 150 L 950 150" />
+          </circle>
+          <circle class="flow-dot" r="4" opacity="0.6">
+            <animateMotion dur="4s" begin="1.3s" repeatCount="indefinite" path="M 90 150 L 950 150" />
+          </circle>
+          <circle class="flow-dot" r="4" opacity="0.35">
+            <animateMotion dur="4s" begin="2.6s" repeatCount="indefinite" path="M 90 150 L 950 150" />
+          </circle>
+
+          <!-- alert pulse at inspect node -->
+          <circle class="alert-ring" cx="262" cy="150" r="20" />
+
+          <!-- Node 1: Capture -->
+          <g class="node-group">
+            <rect class="node-box" x="42" y="118" width="96" height="64" rx="8"/>
+            <text class="node-index" x="90" y="106" text-anchor="middle">01</text>
+            <text class="node-label" x="90" y="146" text-anchor="middle">Capture</text>
+            <text class="node-sub" x="90" y="162" text-anchor="middle">libpcap / Npcap</text>
+          </g>
+
+          <!-- Node 2: Inspect -->
+          <g class="node-group">
+            <rect class="node-box" x="214" y="118" width="96" height="64" rx="8"/>
+            <text class="node-index" x="262" y="106" text-anchor="middle">02</text>
+            <text class="node-label" x="262" y="146" text-anchor="middle">Inspect</text>
+            <text class="node-sub" x="262" y="162" text-anchor="middle">DPI + alerting</text>
+          </g>
+
+          <!-- Node 3: Stream -->
+          <g class="node-group">
+            <rect class="node-box" x="386" y="118" width="96" height="64" rx="8"/>
+            <text class="node-index" x="434" y="106" text-anchor="middle">03</text>
+            <text class="node-label" x="434" y="146" text-anchor="middle">Stream</text>
+            <text class="node-sub" x="434" y="162" text-anchor="middle">gRPC + Boost Asio</text>
+          </g>
+
+          <!-- Node 4: Persist -->
+          <g class="node-group">
+            <rect class="node-box" x="558" y="118" width="96" height="64" rx="8"/>
+            <text class="node-index" x="606" y="106" text-anchor="middle">04</text>
+            <text class="node-label" x="606" y="146" text-anchor="middle">Persist</text>
+            <text class="node-sub" x="606" y="162" text-anchor="middle">Spring Boot + PSQL</text>
+          </g>
+
+          <!-- Node 5: Containerize -->
+          <g class="node-group">
+            <rect class="node-box" x="730" y="118" width="96" height="64" rx="8"/>
+            <text class="node-index" x="778" y="106" text-anchor="middle">05</text>
+            <text class="node-label" x="778" y="146" text-anchor="middle">Containerize</text>
+            <text class="node-sub" x="778" y="162" text-anchor="middle">Docker</text>
+          </g>
+
+          <!-- Node 6: Orchestrate -->
+          <g class="node-group">
+            <rect class="node-box" x="902" y="118" width="96" height="64" rx="8"/>
+            <text class="node-index" x="950" y="106" text-anchor="middle">06</text>
+            <text class="node-label" x="950" y="146" text-anchor="middle">Orchestrate</text>
+            <text class="node-sub" x="950" y="162" text-anchor="middle">Kubernetes + Helm</text>
+          </g>
+
+          <!-- captured log line, bottom -->
+          <text x="520" y="238" text-anchor="middle" class="mono" font-family="JetBrains Mono" font-size="11.5" fill="#4a566e">
+            [ALERT] Connection to known-bad port 31337 — 5 packets captured, 1 alert, receipt confirmed
+          </text>
+        </svg>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="n">6</div><div class="l">PIPELINE STAGES</div></div>
+        <div class="stat"><div class="n">2</div><div class="l">LANGUAGES: C++17 / JAVA 21</div></div>
+        <div class="stat"><div class="n">3</div><div class="l">RUNTIME MODES: NATIVE / DOCKER / K8S</div></div>
+        <div class="stat"><div class="n">100%</div><div class="l">END-TO-END VERIFIED</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="stack-section" id="stack">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Tech stack</div>
+        <h2>Every layer, deliberately chosen to close specific gaps.</h2>
+      </div>
+
+      <div class="stack-grid">
+        <div class="stack-card">
+          <h3>Capture &amp; Networking</h3>
+          <div class="chip-row">
+            <span class="chip">C++17</span>
+            <span class="chip">Boost.Asio</span>
+            <span class="chip">libpcap</span>
+            <span class="chip">Npcap</span>
+            <span class="chip">CMake</span>
+          </div>
+        </div>
+        <div class="stack-card">
+          <h3>Transport &amp; RPC</h3>
+          <div class="chip-row">
+            <span class="chip">gRPC</span>
+            <span class="chip">Protocol Buffers</span>
+            <span class="chip">Async streaming</span>
+          </div>
+        </div>
+        <div class="stack-card">
+          <h3>Server &amp; Persistence</h3>
+          <div class="chip-row">
+            <span class="chip">Java 21</span>
+            <span class="chip">Spring Boot 4</span>
+            <span class="chip">Hibernate / JPA</span>
+            <span class="chip">PostgreSQL</span>
+            <span class="chip">Maven</span>
+          </div>
+        </div>
+        <div class="stack-card">
+          <h3>Containers</h3>
+          <div class="chip-row">
+            <span class="chip">Docker</span>
+            <span class="chip">Multi-stage builds</span>
+            <span class="chip">Debian bookworm</span>
+          </div>
+        </div>
+        <div class="stack-card">
+          <h3>Orchestration</h3>
+          <div class="chip-row">
+            <span class="chip">Kubernetes</span>
+            <span class="chip">Helm charts</span>
+            <span class="chip">ConfigMaps / Secrets</span>
+            <span class="chip">Jobs &amp; Deployments</span>
+          </div>
+        </div>
+        <div class="stack-card">
+          <h3>Detection Logic</h3>
+          <div class="chip-row">
+            <span class="chip">Deep packet inspection</span>
+            <span class="chip">Rule-based alerting</span>
+            <span class="chip">Ethernet / IPv4 / TCP / UDP</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="repo-section" id="repos">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Source</div>
+        <h2>Two repos, one pipeline.</h2>
+      </div>
+
+      <div class="repo-grid">
+        <a class="repo-card" href="https://github.com/johnernestfreeman-prog/network-traffic-analyzer" target="_blank" rel="noopener">
+          <div class="rname">network-traffic-analyzer <span class="arrow">↗</span></div>
+          <p class="rdesc">C++ capture client — pcap parsing, live capture, async I/O via Boost Asio, DPI, and the gRPC streaming client. Includes the Dockerfile and Helm chart.</p>
+          <div class="rmeta">C++17 · CMake · Docker · Helm</div>
+        </a>
+        <a class="repo-card" href="https://github.com/johnernestfreeman-prog/traffic-analyzer-server" target="_blank" rel="noopener">
+          <div class="rname">traffic-analyzer-server <span class="arrow">↗</span></div>
+          <p class="rdesc">Java gRPC server — receives streamed packet events, persists them via Spring Data JPA, and exposes a REST API backed by PostgreSQL.</p>
+          <div class="rmeta">Java 21 · Spring Boot 4 · PostgreSQL</div>
+        </a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>&copy; 2026 John Freeman — built with Claude as a documented development tool.</p>
+    <div class="flinks">
+      <a href="https://github.com/johnernestfreeman-prog" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://linkedin.com/in/john-ernest-freeman-jr" target="_blank" rel="noopener">LinkedIn</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
