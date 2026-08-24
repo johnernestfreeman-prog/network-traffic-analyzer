@@ -13,7 +13,7 @@ public:
     AsyncCapture(boost::asio::io_context& io_context, pcap_t* handle, TrafficGrpcClient* grpc_client)
         : io_context_(io_context), handle_(handle), timer_(io_context), grpc_client_(grpc_client) {
         char errbuf[PCAP_ERRBUF_SIZE];
-        if (pcap_setnonblock(handle_, 1, errbuf) == -1) {
+        if (pcap_file(handle_) == nullptr && pcap_setnonblock(handle_, 1, errbuf) == -1) {
             std::cerr << "Failed to set non-blocking mode: " << errbuf << "\n";
         }
         schedule_poll();
@@ -63,12 +63,26 @@ private:
 
 int main(int argc, char* argv[]) {
     bool use_grpc = false;
+    std::string file_path;
     for (int a = 1; a < argc; a++) {
         if (std::strcmp(argv[a], "--grpc") == 0) use_grpc = true;
+        else if (std::strcmp(argv[a], "--file") == 0 && a + 1 < argc) { file_path = argv[++a]; }
     }
 
     char errbuf[PCAP_ERRBUF_SIZE];
 
+    pcap_t* handle = nullptr;
+    std::string interface_name;
+
+    if (!file_path.empty()) {
+        handle = pcap_open_offline(file_path.c_str(), errbuf);
+        if (handle == nullptr) {
+            std::cerr << "Failed to open pcap file: " << errbuf << "\n";
+            return 1;
+        }
+        interface_name = "file:" + file_path;
+        std::cout << "Reading from pcap file: " << file_path << "\n";
+    } else {
     pcap_if_t* all_devices;
     if (pcap_findalldevs(&all_devices, errbuf) == -1) {
         std::cerr << "Error finding devices: " << errbuf << "\n";
@@ -100,15 +114,16 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     pcap_if_t* selected = device_list[choice];
-    std::string interface_name = selected->name;
+    interface_name = selected->name;
 
-    pcap_t* handle = pcap_open_live(selected->name, 65536, 0, 1000, errbuf);
+    handle = pcap_open_live(selected->name, 65536, 0, 1000, errbuf);
     if (handle == nullptr) {
         std::cerr << "Failed to open interface: " << errbuf << "\n";
         pcap_freealldevs(all_devices);
         return 1;
     }
     pcap_freealldevs(all_devices);
+    }
 
     std::unique_ptr<TrafficGrpcClient> grpc_client;
     if (use_grpc) {
